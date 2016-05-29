@@ -1,38 +1,35 @@
+﻿/*
+    DOC:
+    text - takes "20+(80*i)" instructors ("\n" beahviour unspecified yet)
+*/
 string TextPanelName = "LCD Centre 3 Base";
 
-//List<char> charList = new List<char>() {'\uE006','\uE00E','\uE00D','\uE009','\uE00F'};
 DisplayInterface display;
-int uid;
-int uid2;
-int val = 100;
+int val = 0;
 
 Program() {
     var textPanel = GridTerminalSystem.GetBlockWithName(TextPanelName) as IMyTextPanel;
     display = new DisplayInterface(textPanel, this);
-    uid2=display.AddElementBar(0f, new int[] {5,38}, new int[] {70,5}, "G");
-    uid=display.AddElementString("AHOJKY, JAK SE MAS\nJA DOCELA DOBRE", new int[] {2,20}, "Y");
-    display.Show();
+    //display.Show();
     Echo("INIT>>"+Runtime.CurrentInstructionCount+"/"+Runtime.MaxInstructionCount);
 }
 
 //  "\uE001\uE002\uE003\uE004\uE006\uE00E\uE00D\uE00F"
 int runTick = 0;
 static int fTime;
+List<string> moj = new List<string>() {"R", "G", "Y"};
 void Main(string argument) 
 {
     runTick++;
-    if (runTick < 10) {
-        //return;
+    if (runTick == 1) {
+        runTick = 0;
     }
-    runTick = 0;
+    val += 1;
+    
     fTime = DateTime.Now.Millisecond;
-    val=(val-1);
-    if (val < -2) val = 100;
-    var txt = ((DisplayInterface.DisplayElementString)display.elementList[uid]);
-    txt.Update(text:"STATION VOLTAGE:\n"+val.ToString()+" %");
-    var bar = ((DisplayInterface.DisplayElementBar)display.elementList[uid2]);
-    bar.Update(data:val/100f, color1:(val/100f>0.3f ? "G" : (val/100f>0.15f ? "Y" : "R")));
-    display.Show(); 
+    
+    display.Show();
+    
     Echo("");
     Echo("Runtime:\n   "+(DateTime.Now.Millisecond-fTime) + " ms\n   "+Runtime.CurrentInstructionCount+"/"+
         Runtime.MaxInstructionCount+" instructions\n   "+Runtime.CurrentMethodCallCount+"/"+
@@ -56,7 +53,7 @@ class DisplayInterface {
 
     public int brightness = 0;
 
-    public DisplayInterface(IMyTextPanel pan, Single fSize = (Single)0.1, int sizeX = 80, int sizeY = 89) {
+    public DisplayInterface(IMyTextPanel pan, Single fSize = (Single)0.2, int sizeX = 80, int sizeY = 89) {
         panel = pan;
         fontSize = fSize;
         x = sizeX;
@@ -66,7 +63,7 @@ class DisplayInterface {
         ResetData();
     }
 
-    public DisplayInterface(IMyTextPanel pan, MyGridProgram me, Single fSize = (Single)0.1, int sizeX = 80, 
+    public DisplayInterface(IMyTextPanel pan, MyGridProgram me, Single fSize = (Single)0.2, int sizeX = 80, 
                                     int sizeY = 89) {
         panel = pan;
         meDebug = me;
@@ -169,7 +166,8 @@ class DisplayInterface {
             var layer = elementList[keys[i]].eLayer;
             var index = layerElements.Count;
             for (var el = 0; el < layerElements.Count; el++) {
-                if (layer >= layerElements[el].eLayer) index = el;
+                if (layer <= layerElements[el].eLayer) index = el+1;
+                else break;
             }
             layerElements.Insert(index, elementList[i]);
         }
@@ -227,32 +225,19 @@ class DisplayInterface {
     }
 
     void MergeData(DisplayElement what) {
-        var color1 = colorTable["W"];
-        var color2 = colorTable["W"];
-        var color3 = colorTable["W"];
-        var color4 = colorTable["W"];
+        var ccTable = what.colorConvertTable;
         var iposx = what.posX;
         var iposy = what.posY;
         var dat = what.eData;
-        if (what.eType == "TEXT") {
-            var child = what as DisplayElementString;
-            color1 = (colorTable.ContainsKey(child.tColor) ? colorTable[child.tColor] : colorTable["W"]);
-            color2 = (colorTable.ContainsKey(child.bColor) ? colorTable[child.bColor] : colorTable["W"]);
-        } else if (what.eType == "BAR") {
-            var child = what as DisplayElementBar; 
-            color1 = (colorTable.ContainsKey(child.pColor) ? colorTable[child.pColor] : colorTable["W"]);
-            color2 = (colorTable.ContainsKey(child.fColor) ? colorTable[child.fColor] : colorTable["W"]);
-            color3 = (colorTable.ContainsKey(child.pColor2) ? colorTable[child.pColor2] : colorTable["W"]); 
-            color4 = (colorTable.ContainsKey(child.pColor3) ? colorTable[child.pColor3] : colorTable["W"]);
-        }
 
         for (var iy = 0; iy < dat.Count; iy++) {
             for (var ix = 0; ix < dat[iy].Count; ix++) {
-                if ((iy+iposy) < y || (iy+iposy) >= 0 || (ix+iposx) < x || (ix+iposx) >= 0)
-                    if (dat[iy][ix] == 1) data[iy+iposy][ix+iposx] = color1;
-                    else if (dat[iy][ix] == 2) data[iy+iposy][ix+iposx] = color2;
-                    else if (dat[iy][ix] == 3) data[iy+iposy][ix+iposx] = color3;
-                    else if (dat[iy][ix] == 4) data[iy+iposy][ix+iposx] = color4;
+                if ((iy+iposy) < y && (iy+iposy) >= 0 && (ix+iposx) < x && (ix+iposx) >= 0) {
+                    var d = dat[iy][ix];
+                    if (d != 0)
+                        data[iy+iposy][ix+iposx] = (colorTable.ContainsKey(ccTable[d]) ? 
+                            colorTable[ccTable[d]] : colorTable["W"]);
+                }
             }
         }
     }
@@ -302,7 +287,8 @@ class DisplayInterface {
         public int posY;
         public int eLayer;
         public string eType;
-        MyGridProgram me;
+        public Dictionary<int, string> colorConvertTable;
+        internal MyGridProgram me;
 
         public DisplayElement(MyGridProgram m, string type,  int[] position, int layer = 0) {
             me = m;
@@ -311,12 +297,13 @@ class DisplayInterface {
             eLayer = layer;
             eType = type;
         }
+        public virtual void Refresh() {
+        }
     }
 
     public class DisplayElementString : DisplayElement {
         public string tColor;
         public string bColor;
-        public string fColor;
         string eText;
 
         public DisplayElementString(MyGridProgram m, string dat, int[] position, string colorText = "Y", 
@@ -324,7 +311,9 @@ class DisplayInterface {
                                 : base(m, "TEXT", position, layer) {
             tColor = colorText;
             bColor = bgrdColor;
+            colorConvertTable = new Dictionary<int, string>() {{1, tColor},{2, bColor}};
             eText = dat;
+
             eData = ConvertText(dat);
         }
 
@@ -333,7 +322,7 @@ class DisplayInterface {
  
             int logic = 0; 
             List<List<int>> lst = new List<List<int>>(); 
-            var strArr = str.Split('\n'); 
+            var strArr = str.Split('\n');
             for (var line = 0; line < strArr.Length; line++) { 
                 for (var row = (5+lineSpace)*line; row < 5*(line+1)+lineSpace*line; row++) { 
                     lst.Add(new List<int>()); 
@@ -347,7 +336,7 @@ class DisplayInterface {
                             else if (bColor != "") lst[row].Add(2);
                             else lst[row].Add(0);
                         } 
-                        lst[row].Add(bColor != "" ? 2 : 0);                                                    // space between letters 
+                        lst[row].Add(bColor != "" ? 2 : 0);                       // space between letters 
                     } 
                     logic = ((logic+1)%5); 
                 } 
@@ -361,6 +350,10 @@ class DisplayInterface {
             if (textColor!="") tColor = textColor;
             if (backColor!="") bColor = backColor;
             if (text!="") {eData=ConvertText(text); eText=text;}
+            colorConvertTable = new Dictionary<int, string>() {{1, tColor},{2, bColor}};
+        }
+        public override void Refresh() {
+            eData=ConvertText(eText);
         }
         public string GetText() {
             return eText;
@@ -391,22 +384,29 @@ class DisplayInterface {
             Color2 = lvlColor2;
             Color3 = lvlColor3;
             progress = dat;
+            colorConvertTable = new Dictionary<int, string>() {{1, pColor},{2, fColor},{3, pColor2},{4, pColor3}};
 
             eData = CreateProgressBar(dat);
         }
 
         public List<List<int>> CreateProgressBar(float data) { 
-            List<List<int>> lst = new List<List<int>>(); 
+            List<List<int>> lst = new List<List<int>>();
+            var borderLine = new int[sizeX];
+            var barBody = new int[sizeX];
+            for (var i = 0; i < sizeX; i++) {
+                borderLine[i] = 2;
+
+                // I'm sorry for this, when I do nested condition variable via "if () {}", I get error "illegal one-byte branch"
+                // if i=first|last => 2; if i/max_i<data => (if i<color2_threshold => 1; if i< color3_threshold => 3; 4); 0
+                barBody[i] = ((i != 0 && i != sizeX-1) ? (((float)i)/(sizeX-2)<=data ? (((float)i)/(sizeX-2)<Color2 ? 1 :
+                    ((float)i)/(sizeX-2)<Color3 ? 3 : 4) : 0) : 2);
+            }
+
             for (var iy = 0; iy < sizeY; iy++) {
-                lst.Add(new List<int>());
-                for (var ix = 0; ix < sizeX; ix++) {
-                    if (iy == 0 || iy == sizeY-1 || ix == 0 || ix == sizeX-1) lst[iy].Add(2);
-                    else if (((float)ix)/(sizeX-2)<data)
-                        if (((float)ix)/(sizeX-2)<Color2) lst[iy].Add(1);
-                        else if (((float)ix)/(sizeX-2)<Color3) lst[iy].Add(3);
-                        else lst[iy].Add(4);
-                    else lst[iy].Add(0);
-                }
+                if (iy==0 || iy==sizeY-1) {
+                    lst.Add(new List<int>(borderLine));
+                    continue;
+                } else lst.Add(new List<int>(barBody));
             }
             return lst; 
         }
@@ -424,6 +424,10 @@ class DisplayInterface {
             if (sizex!=-1) sizeX = sizex;
             if (sizey!=-1) sizeY = sizey;
             eData = CreateProgressBar(progress);
+            colorConvertTable = new Dictionary<int, string>() {{1, pColor},{2, fColor},{3, pColor2},{4, pColor3}};
+        }
+        public override void Refresh() { 
+            eData=CreateProgressBar(progress); 
         }
         public float GetProgress() {
             return progress;
