@@ -1,36 +1,37 @@
 ﻿/*
-    DOC:
-    text - takes "20+(80*i)" instructors ("\n" beahviour unspecified yet)
+    DOCUMENTATION:
+    20+(80)*i - TEXT
 */
 string TextPanelName = "LCD Centre 3 Base";
 
 DisplayInterface display;
-int val = 0;
 
+int uid;
 Program() {
     var textPanel = GridTerminalSystem.GetBlockWithName(TextPanelName) as IMyTextPanel;
-    display = new DisplayInterface(textPanel, this);
-    //display.Show();
+    display = new DisplayInterface(textPanel, this, Runtime);
+    //display.AddElementCircle(new int[] {5,5}, new int[] {70, 80}, 1, 0,"W", "G2");
+    display.Show();
     Echo("INIT>>"+Runtime.CurrentInstructionCount+"/"+Runtime.MaxInstructionCount);
 }
 
 //  "\uE001\uE002\uE003\uE004\uE006\uE00E\uE00D\uE00F"
 int runTick = 0;
 static int fTime;
-List<string> moj = new List<string>() {"R", "G", "Y"};
+int val = 0;
 void Main(string argument) 
 {
     runTick++;
     if (runTick == 1) {
         runTick = 0;
     }
-    val += 1;
-    
+    val=(val+1);
     fTime = DateTime.Now.Millisecond;
-    
+
+    var arr = new string[] {"R","G","B","Y","G1"};
+    display.AddElementString(val.ToString(), new int[] {13*(val/40), 2*(val%40)}, arr[val%5], 0);
     display.Show();
-    
-    Echo("");
+
     Echo("Runtime:\n   "+(DateTime.Now.Millisecond-fTime) + " ms\n   "+Runtime.CurrentInstructionCount+"/"+
         Runtime.MaxInstructionCount+" instructions\n   "+Runtime.CurrentMethodCallCount+"/"+
         Runtime.MaxMethodCallCount+" methods call");
@@ -39,37 +40,45 @@ void Main(string argument)
 // ===================================================================================
 class DisplayInterface {
     static Dictionary<char, List<List<int>>> convertTable = new Dictionary<char, List<List<int>>>();
-    Dictionary<string, char> colorTable = new Dictionary<string, char>(); 
-    List<char> grayList = new List<char>() {'\uE00F','\uE009','\uE00D','\uE00E','\uE006'};
+    Dictionary<string, string> colorTable = new Dictionary<string, string>(); 
+    List<string> grayList = new List<string>() {"'   '","!|!|!","\uE00F","\uE009","\uE00D","\uE00E","\uE006"};
     public Dictionary<int, DisplayElement> elementList = new Dictionary<int, DisplayElement>();
-    char[] grayArray;
+    string[] grayArray;
     int id_index = 0;
     IMyTextPanel panel;
     MyGridProgram meDebug;
+    IMyGridProgramRuntimeInfo runtime;
     int x;
     int y;
     Single fontSize;
-    List<List<char>> data = new List<List<char>>();
+    List<List<string>> data = new List<List<string>>();
+
+    // Anti script-complexity system: should prevent "Script is too complex" error to be raised, instead it will
+    //   split the execution of script in several steps (speed of update will be decreased)
+    int ASCS_ind = 0;       // if is higher than 0, it means that last run was complex and we need to finish it.
+    List<DisplayElement> ASCS_lst = null;
 
     public int brightness = 0;
 
-    public DisplayInterface(IMyTextPanel pan, Single fSize = (Single)0.2, int sizeX = 80, int sizeY = 89) {
+    public DisplayInterface(IMyTextPanel pan, IMyGridProgramRuntimeInfo rt, Single fSize = (Single)0.2, int sizeX = 80, int sizeY = 89) {
         panel = pan;
         fontSize = fSize;
         x = sizeX;
         y = sizeY;
+        runtime = rt;
 
         Initialize();
         ResetData();
     }
 
-    public DisplayInterface(IMyTextPanel pan, MyGridProgram me, Single fSize = (Single)0.2, int sizeX = 80, 
+    public DisplayInterface(IMyTextPanel pan, MyGridProgram me, IMyGridProgramRuntimeInfo rt, Single fSize = (Single)0.2, int sizeX = 80, 
                                     int sizeY = 89) {
         panel = pan;
         meDebug = me;
         fontSize = fSize; 
         x = sizeX; 
         y = sizeY;
+        runtime = rt;
         me.Echo("Debug ON");
 
         Initialize();
@@ -77,103 +86,146 @@ class DisplayInterface {
     }
 
     public void Initialize() {
-        convertTable.Add(' ', textToBlock("0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 0 0"));
-        convertTable.Add('A', textToBlock("0 1 0\n1 0 1\n1 1 1\n1 0 1\n1 0 1")); 
-        convertTable.Add('B', textToBlock("1 1 0\n1 0 1\n1 1 0\n1 0 1\n1 1 0")); 
-        convertTable.Add('C', textToBlock("0 1 0\n1 0 1\n1 0 0\n1 0 1\n0 1 0")); 
-        convertTable.Add('D', textToBlock("1 1 0\n1 0 1\n1 0 1\n1 0 1\n1 1 0"));
-        convertTable.Add('E', textToBlock("1 1 1\n1 0 0\n1 1 0\n1 0 0\n1 1 1"));
-        convertTable.Add('F', textToBlock("1 1 1\n1 0 0\n1 1 0\n1 0 0\n1 0 0"));
-        convertTable.Add('G', textToBlock("0 1 1\n1 0 0\n1 0 1\n1 0 1\n0 1 1"));
-        convertTable.Add('H', textToBlock("1 0 1\n1 0 1\n1 1 1\n1 0 1\n1 0 1"));
-        convertTable.Add('I', textToBlock("1 1 1\n0 1 0\n0 1 0\n0 1 0\n1 1 1"));
-        convertTable.Add('J', textToBlock("0 0 1\n0 0 1\n0 0 1\n1 0 1\n1 1 1"));
-        convertTable.Add('K', textToBlock("1 0 1\n1 0 1\n1 1 0\n1 0 1\n1 0 1"));
-        convertTable.Add('L', textToBlock("1 0 0\n1 0 0\n1 0 0\n1 0 0\n1 1 1"));
-        convertTable.Add('M', textToBlock("1 0 1\n1 1 1\n1 0 1\n1 0 1\n1 0 1"));
-        convertTable.Add('N', textToBlock("1 1 0\n1 0 1\n1 0 1\n1 0 1\n1 0 1"));
-        convertTable.Add('O', textToBlock("0 1 0\n1 0 1\n1 0 1\n1 0 1\n0 1 0"));
-        convertTable.Add('P', textToBlock("1 1 0\n1 0 1\n1 1 0\n1 0 0\n1 0 0"));
-        convertTable.Add('Q', textToBlock("0 1 0\n1 0 1\n1 0 1\n1 1 1\n0 1 1"));
-        convertTable.Add('R', textToBlock("1 1 0\n1 0 1\n1 1 0\n1 0 1\n1 0 1"));
-        convertTable.Add('S', textToBlock("0 1 1\n1 0 0\n0 1 0\n0 0 1\n1 1 0"));
-        convertTable.Add('T', textToBlock("1 1 1\n0 1 0\n0 1 0\n0 1 0\n0 1 0"));
-        convertTable.Add('U', textToBlock("1 0 1\n1 0 1\n1 0 1\n1 0 1\n1 1 1"));
-        convertTable.Add('V', textToBlock("1 0 1\n1 0 1\n1 0 1\n0 1 0\n0 1 0"));
-        convertTable.Add('W', textToBlock("1 0 1\n1 0 1\n1 0 1\n1 1 1\n1 0 1"));
-        convertTable.Add('X', textToBlock("1 0 1\n1 0 1\n0 1 0\n1 0 1\n1 0 1"));
-        convertTable.Add('Y', textToBlock("1 0 1\n1 0 1\n0 1 0\n0 1 0\n0 1 0"));
-        convertTable.Add('Z', textToBlock("1 1 1\n0 0 1\n0 1 0\n1 0 0\n1 1 1"));
+        convertTable.Add(' ', textToBlock("000/000/000/000/000")); 
+        convertTable.Add('A', textToBlock("010/101/111/101/101"));  
+        convertTable.Add('B', textToBlock("110/101/110/101/110"));  
+        convertTable.Add('C', textToBlock("010/101/100/101/010"));  
+        convertTable.Add('D', textToBlock("110/101/101/101/110")); 
+        convertTable.Add('E', textToBlock("111/100/110/100/111")); 
+        convertTable.Add('F', textToBlock("111/100/110/100/100")); 
+        convertTable.Add('G', textToBlock("011/100/101/101/011")); 
+        convertTable.Add('H', textToBlock("101/101/111/101/101")); 
+        convertTable.Add('I', textToBlock("111/010/010/010/111")); 
+        convertTable.Add('J', textToBlock("001/001/001/101/111")); 
+        convertTable.Add('K', textToBlock("101/101/110/101/101")); 
+        convertTable.Add('L', textToBlock("100/100/100/100/111")); 
+        convertTable.Add('M', textToBlock("101/111/101/101/101")); 
+        convertTable.Add('N', textToBlock("110/101/101/101/101")); 
+        convertTable.Add('O', textToBlock("010/101/101/101/010")); 
+        convertTable.Add('P', textToBlock("110/101/110/100/100")); 
+        convertTable.Add('Q', textToBlock("010/101/101/111/011")); 
+        convertTable.Add('R', textToBlock("110/101/110/101/101")); 
+        convertTable.Add('S', textToBlock("011/100/010/001/110")); 
+        convertTable.Add('T', textToBlock("111/010/010/010/010")); 
+        convertTable.Add('U', textToBlock("101/101/101/101/111")); 
+        convertTable.Add('V', textToBlock("101/101/101/010/010")); 
+        convertTable.Add('W', textToBlock("101/101/101/111/101")); 
+        convertTable.Add('X', textToBlock("101/101/010/101/101")); 
+        convertTable.Add('Y', textToBlock("101/101/010/010/010")); 
+        convertTable.Add('Z', textToBlock("111/001/010/100/111")); 
 
-        convertTable.Add('0', textToBlock("1 1 1\n1 0 1\n1 0 1\n1 0 1\n1 1 1"));
-        convertTable.Add('1', textToBlock("0 1 0\n1 1 0\n0 1 0\n0 1 0\n1 1 1"));
-        convertTable.Add('2', textToBlock("1 1 1\n0 0 1\n1 1 1\n1 0 0\n1 1 1"));
-        convertTable.Add('3', textToBlock("1 1 1\n0 0 1\n0 1 1\n0 0 1\n1 1 1"));
-        convertTable.Add('4', textToBlock("1 0 1\n1 0 1\n1 1 1\n0 0 1\n0 0 1"));
-        convertTable.Add('5', textToBlock("1 1 1\n1 0 0\n1 1 1\n0 0 1\n1 1 1"));
-        convertTable.Add('6', textToBlock("1 1 1\n1 0 0\n1 1 1\n1 0 1\n1 1 1"));
-        convertTable.Add('7', textToBlock("1 1 1\n0 0 1\n0 0 1\n0 0 1\n0 0 1"));
-        convertTable.Add('8', textToBlock("1 1 1\n1 0 1\n1 1 1\n1 0 1\n1 1 1"));
-        convertTable.Add('9', textToBlock("1 1 1\n1 0 1\n1 1 1\n0 0 1\n1 1 1"));
+        convertTable.Add('a', textToBlock("000/111/001/111/111"));  
+        convertTable.Add('b', textToBlock("100/111/101/101/111"));  
+        convertTable.Add('c', textToBlock("000/111/100/100/111"));  
+        convertTable.Add('d', textToBlock("001/111/101/101/111"));  
+        convertTable.Add('e', textToBlock("000/111/111/100/111"));  
+        convertTable.Add('f', textToBlock("011/010/111/010/010"));  
+        convertTable.Add('g', textToBlock("000/111/111/001/111"));  
+        convertTable.Add('h', textToBlock("100/111/101/101/101"));  
+        convertTable.Add('i', textToBlock("010/000/010/010/111"));  
+        convertTable.Add('j', textToBlock("010/000/010/010/110"));  
+        convertTable.Add('k', textToBlock("100/100/101/110/101"));  
+        convertTable.Add('l', textToBlock("010/010/010/010/001"));  
+        convertTable.Add('m', textToBlock("000/101/111/101/101"));  
+        convertTable.Add('n', textToBlock("000/111/101/101/101"));  
+        convertTable.Add('o', textToBlock("000/111/101/101/111"));  
+        convertTable.Add('p', textToBlock("000/111/101/111/100"));  
+        convertTable.Add('q', textToBlock("000/111/101/111/001"));  
+        convertTable.Add('r', textToBlock("000/111/100/100/100"));  
+        convertTable.Add('s', textToBlock("000/011/110/011/110"));  
+        convertTable.Add('t', textToBlock("010/111/010/010/011"));  
+        convertTable.Add('u', textToBlock("000/101/101/101/111"));  
+        convertTable.Add('v', textToBlock("000/101/101/101/010"));  
+        convertTable.Add('w', textToBlock("000/101/101/111/111"));  
+        convertTable.Add('x', textToBlock("000/101/101/010/101"));  
+        convertTable.Add('y', textToBlock("000/101/111/001/111"));  
+        convertTable.Add('z', textToBlock("000/111/011/110/111")); 
+ 
+        convertTable.Add('0', textToBlock("111/101/101/101/111")); 
+        convertTable.Add('1', textToBlock("010/110/010/010/111")); 
+        convertTable.Add('2', textToBlock("111/001/111/100/111")); 
+        convertTable.Add('3', textToBlock("111/001/011/001/111")); 
+        convertTable.Add('4', textToBlock("101/101/111/001/001")); 
+        convertTable.Add('5', textToBlock("111/100/111/001/111")); 
+        convertTable.Add('6', textToBlock("111/100/111/101/111")); 
+        convertTable.Add('7', textToBlock("111/001/001/001/001")); 
+        convertTable.Add('8', textToBlock("111/101/111/101/111")); 
+        convertTable.Add('9', textToBlock("111/101/111/001/111")); 
+ 
+        convertTable.Add('.', textToBlock("000/000/000/000/010")); 
+        convertTable.Add(',', textToBlock("000/000/000/010/100")); 
+        convertTable.Add('!', textToBlock("010/010/010/000/010")); 
+        convertTable.Add('?', textToBlock("110/010/011/000/010")); 
+        convertTable.Add('_', textToBlock("000/000/000/000/111")); 
+        convertTable.Add(':', textToBlock("000/010/000/010/000")); 
+        convertTable.Add('"', textToBlock("101/101/000/000/000")); 
+        convertTable.Add('-', textToBlock("000/000/111/000/000")); 
+        convertTable.Add('+', textToBlock("000/010/111/010/000")); 
+        convertTable.Add('*', textToBlock("010/111/111/010/000")); 
+        convertTable.Add('%', textToBlock("101/001/010/100/101")); 
+        convertTable.Add('/', textToBlock("001/010/010/100/100")); 
+        convertTable.Add('\\', textToBlock("100/010/010/001/001")); 
+        convertTable.Add('>', textToBlock("100/010/001/010/100")); 
+        convertTable.Add('<', textToBlock("001/010/100/010/001")); 
+        convertTable.Add('\'', textToBlock("010/010/000/000/000")); 
+        convertTable.Add('(', textToBlock("001/010/010/010/001")); 
+        convertTable.Add(')', textToBlock("100/010/010/010/100")); 
+        convertTable.Add(';', textToBlock("000/010/000/010/100")); 
+        convertTable.Add('=', textToBlock("000/111/000/111/000")); 
+        convertTable.Add('[', textToBlock("011/010/010/010/011")); 
+        convertTable.Add(']', textToBlock("110/010/010/010/110")); 
+        convertTable.Add('{', textToBlock("011/010/100/010/011")); 
+        convertTable.Add('}', textToBlock("110/010/001/010/110")); 
+        convertTable.Add('^', textToBlock("010/101/000/000/000"));
 
-        convertTable.Add('.', textToBlock("0 0 0\n0 0 0\n0 0 0\n0 0 0\n0 1 0"));
-        convertTable.Add(',', textToBlock("0 0 0\n0 0 0\n0 0 0\n0 1 0\n1 0 0"));
-        convertTable.Add('!', textToBlock("0 1 0\n0 1 0\n0 1 0\n0 0 0\n0 1 0"));
-        convertTable.Add('?', textToBlock("1 1 0\n0 1 0\n0 1 1\n0 0 0\n0 1 0"));
-        convertTable.Add('_', textToBlock("0 0 0\n0 0 0\n0 0 0\n0 0 0\n1 1 1"));
-        convertTable.Add(':', textToBlock("0 0 0\n0 1 0\n0 0 0\n0 1 0\n0 0 0"));
-        convertTable.Add('"', textToBlock("1 0 1\n1 0 1\n0 0 0\n0 0 0\n0 0 0"));
-        convertTable.Add('-', textToBlock("0 0 0\n0 0 0\n1 1 1\n0 0 0\n0 0 0"));
-        convertTable.Add('+', textToBlock("0 0 0\n0 1 0\n1 1 1\n0 1 0\n0 0 0"));
-        convertTable.Add('*', textToBlock("0 1 0\n1 1 1\n1 1 1\n0 1 0\n0 0 0"));
-        convertTable.Add('%', textToBlock("1 0 1\n0 0 1\n0 1 0\n1 0 0\n1 0 1"));
-        convertTable.Add('/', textToBlock("0 0 1\n0 1 0\n0 1 0\n1 0 0\n1 0 0"));
-        convertTable.Add('\\', textToBlock("1 0 0\n0 1 0\n0 1 0\n0 0 1\n0 0 1"));
-        convertTable.Add('>', textToBlock("1 0 0\n0 1 0\n0 0 1\n0 1 0\n1 0 0"));
-        convertTable.Add('<', textToBlock("0 0 1\n0 1 0\n1 0 0\n0 1 0\n0 0 1"));
-        convertTable.Add('\'', textToBlock("0 1 0\n0 1 0\n0 0 0\n0 0 0\n0 0 0"));
-        convertTable.Add('(', textToBlock("0 0 1\n0 1 0\n0 1 0\n0 1 0\n0 0 1"));
-        convertTable.Add(')', textToBlock("1 0 0\n0 1 0\n0 1 0\n0 1 0\n1 0 0"));
-        convertTable.Add(';', textToBlock("0 0 0\n0 1 0\n0 0 0\n0 1 0\n1 0 0"));
-        convertTable.Add('=', textToBlock("0 0 0\n1 1 1\n0 0 0\n1 1 1\n0 0 0"));
-        convertTable.Add('[', textToBlock("0 1 1\n0 1 0\n0 1 0\n0 1 0\n0 1 1"));
-        convertTable.Add(']', textToBlock("1 1 0\n0 1 0\n0 1 0\n0 1 0\n1 1 0"));
-        convertTable.Add('{', textToBlock("0 1 1\n0 1 0\n1 0 0\n0 1 0\n0 1 1"));
-        convertTable.Add('}', textToBlock("1 1 0\n0 1 0\n0 0 1\n0 1 0\n1 1 0"));
-        convertTable.Add('^', textToBlock("0 1 0\n1 0 1\n0 0 0\n0 0 0\n0 0 0"));
-
-        colorTable.Add("W", '\uE006');      // white
-        colorTable.Add("G1", '\uE00E');      // light gray
-        colorTable.Add("G2", '\uE00D');     // darker gray
-        colorTable.Add("G3", '\uE009');     // even darker gray
-        colorTable.Add("G4", '\uE00F');     // darkest gray
-        colorTable.Add("G", '\uE001');        // green
-        colorTable.Add("B", '\uE002');       // blue
-        colorTable.Add("R", '\uE003');       // red
-        colorTable.Add("Y", '\uE004');       // yellow
+        colorTable.Add("W", "\uE006");      // white
+        colorTable.Add("G1", "\uE00E");      // light gray
+        colorTable.Add("G2", "\uE00D");     // darker gray
+        colorTable.Add("G3", "\uE009");     // even darker gray
+        colorTable.Add("G4", "\uE00F");     // even darker gray
+        colorTable.Add("G5", "!|!|!");            // even darker gray
+        colorTable.Add("G6", "'   '");            // darkest gray
+        colorTable.Add("G", "\uE001");        // green
+        colorTable.Add("B", "\uE002");       // blue
+        colorTable.Add("R", "\uE003");       // red
+        colorTable.Add("Y", "\uE004");       // yellow
     }
 
     public void Process() {
-        
+        Show();
     }
 
     public void RefreshData() {
-        ResetData();
+        if (ASCS_ind == 0) 
+            ResetData();
 
         var keys = new List<int>(elementList.Keys);
         var layerElements = new List<DisplayElement>();
-        for (var i = 0; i < keys.Count; i++) {
-            var layer = elementList[keys[i]].eLayer;
-            var index = layerElements.Count;
-            for (var el = 0; el < layerElements.Count; el++) {
-                if (layer <= layerElements[el].eLayer) index = el+1;
-                else break;
+        if (ASCS_lst != null) layerElements = ASCS_lst;
+        else {
+            for (var i = 0; i < keys.Count; i++) {
+                var layer = elementList[keys[i]].eLayer;
+                var index = 0;
+                for (var el = 0; el < layerElements.Count; el++) {
+                    if (layer <= layerElements[el].eLayer) index = el+1;
+                    else break;
+                }
+                layerElements.Insert(index, elementList[i]);
             }
-            layerElements.Insert(index, elementList[i]);
         }
-        for (var i = 0; i < layerElements.Count; i++) {
-            MergeData(layerElements[i]);
+
+        var ASCS_mergeLogic = 0;
+        for (var i = ASCS_ind; i < layerElements.Count; i++) {
+            ASCS_mergeLogic = (MergeData(layerElements[i]) ? 1 : 2);
+            if (ASCS_mergeLogic==2) {break;}
+            ASCS_ind = i;
         }
+        if (ASCS_mergeLogic==2) {
+            ASCS_lst = layerElements;
+            return;
+        }
+        ASCS_lst = null;
+        ASCS_ind = 0;
     }
     public void RefreshScreen(string strData = "") {
         if (strData == "") strData = ConvertData();
@@ -184,25 +236,27 @@ class DisplayInterface {
 
     public void Show() {
         RefreshData();
-        var toShow = ConvertData();
-        if (panel.GetPublicText() != toShow) RefreshScreen(toShow);
-        else if (meDebug != null) meDebug.Echo("Text already shown");
+        if (ASCS_ind == 0) {
+            var toShow = ConvertData();
+            if (panel.GetPublicText() != toShow) RefreshScreen(toShow);
+            else if (meDebug != null) meDebug.Echo("Text already shown");
+        }
     }
 
     public void ResetData() {
-        grayArray = new char[x];
+        grayArray = new string[x];
         var gray = grayList[brightness]; 
         for (var i = 0; i < x; i++) {
             grayArray[i] = gray;
         }
-        var newData = new List<List<char>>(); 
+        var newData = new List<List<string>>(); 
         for (var ty = 0; ty < y; ty++) {
-            newData.Add(new List<char>(grayArray));
+            newData.Add(new List<string>(grayArray));
         }
         data = newData;
     }
 
-    public string ConvertData(List<List<char>> dat = null) {
+    public string ConvertData(List<List<string>> dat = null) {
         if (dat == null) dat = data;
         string holder = "";
         for (var row = 0; row < dat.Count; row++) {
@@ -217,14 +271,15 @@ class DisplayInterface {
         for (var row = 0; row < dat.Count; row++) { 
             for (var col = 0; col < dat[row].Count; col++) { 
                 holder += dat[row][col]; 
-            } 
-            holder += "\n"; 
-        } 
+            }
+            holder += "\n";
+        }
         holder = holder.Substring(0, holder.Length-1); 
         return holder; 
     }
 
-    void MergeData(DisplayElement what) {
+    bool MergeData(DisplayElement what) {
+        if (runtime.CurrentInstructionCount > 49800) return false;
         var ccTable = what.colorConvertTable;
         var iposx = what.posX;
         var iposy = what.posY;
@@ -235,22 +290,24 @@ class DisplayInterface {
                 if ((iy+iposy) < y && (iy+iposy) >= 0 && (ix+iposx) < x && (ix+iposx) >= 0) {
                     var d = dat[iy][ix];
                     if (d != 0)
-                        data[iy+iposy][ix+iposx] = (colorTable.ContainsKey(ccTable[d]) ? 
-                            colorTable[ccTable[d]] : colorTable["W"]);
+                        data[iy+iposy][ix+iposx] = (colorTable.ContainsKey(ccTable[d]) ?
+                                colorTable[ccTable[d]] : colorTable["W"]);
                 }
+                if (runtime.CurrentInstructionCount > 49800) return false;
             }
         }
+        return true;
     }
 
     public List<List<int>> textToBlock(string inp) {  
         var blck = new List<List<int>>();  
-        foreach (var line in inp.Split('\n')) {  
+        foreach (var line in inp.Split('/')) {  
             var tmp = new List<int>();  
-            var sp = line.Split(' ');  
+            var sp = line.ToCharArray();  
             for (var cha = 0; cha < sp.Length; cha++) {  
                 var charac = sp[cha];  
                 var x = 0;  
-                Int32.TryParse(charac, out x);  
+                Int32.TryParse(charac.ToString(), out x);  
                 tmp.Add(x);  
             }  
             blck.Add(tmp);  
@@ -279,6 +336,35 @@ class DisplayInterface {
                     as DisplayElement); 
         id_index++; 
         return id; 
+    }
+    public int AddElementRectangle(int[] pos, int[] size, int thickness, int layer=0, string frameColor="Y",
+             string fillColor="") {  
+        var id = id_index;  
+        elementList.Add(id, 
+            new DisplayElementRectangle(meDebug, pos, size, thickness, layer, frameColor, fillColor) 
+                    as DisplayElement);  
+        id_index++;  
+        return id;  
+    }
+    public int AddElementCircle(int[] pos, int[] size, int thickness, int layer=0, string frameColor="Y", 
+             string fillColor="") {   
+        var id = id_index;   
+        elementList.Add(id,  
+            new DisplayElementCircle(meDebug, pos, size, thickness, layer, frameColor, fillColor)  
+                    as DisplayElement);   
+        id_index++;   
+        return id;   
+    }
+    public void RemoveElement(int uid) { 
+        DisplayElement holder = null; 
+        if (elementList.ContainsKey(uid)) holder = elementList[uid]; 
+        //if (holder != null) ;
+        elementList.Remove(uid);            // Hope Garbage Collector will work!
+    }
+    public DisplayElement GetElement(int uid) {
+        DisplayElement holder = null;
+        if (elementList.ContainsKey(uid)) holder = elementList[uid];
+        return holder;
     }
 
     public class DisplayElement {
@@ -346,9 +432,9 @@ class DisplayInterface {
             } 
             return lst; 
         }
-        public void Update(string textColor="", string backColor="", string text="") {
+        public void Update(string text="", string textColor="", string backColor=null) {
             if (textColor!="") tColor = textColor;
-            if (backColor!="") bColor = backColor;
+            if (backColor!=null) bColor = backColor;
             if (text!="") {eData=ConvertText(text); eText=text;}
             colorConvertTable = new Dictionary<int, string>() {{1, tColor},{2, bColor}};
         }
@@ -369,7 +455,6 @@ class DisplayInterface {
         public int sizeX;
         public int sizeY;
         float progress;
-
 
         public DisplayElementBar(MyGridProgram m, float dat, int[] position, int[] size, string color = "G",  
                         int layer = 0, string frameColor = "Y", float lvlColor2 = 2f, float lvlColor3 = 2f, string color2 = "Y",
@@ -431,6 +516,89 @@ class DisplayInterface {
         }
         public float GetProgress() {
             return progress;
+        }
+    }
+    public class DisplayElementRectangle : DisplayElement {
+        public int sizeX;
+        public int sizeY;
+        public int thick;
+        public string fColor;
+        public string inColor;
+
+        public DisplayElementRectangle(MyGridProgram m, int[] position, int[] size, int thickness = 1, int layer = 0,
+                        string frameColor="Y", string fillColor = "")
+                                : base(m, "RECT", position, layer) {
+            sizeX = size[0];
+            sizeY = size[1];
+            thick = thickness;
+            fColor = frameColor;
+            inColor = fillColor;
+            colorConvertTable = new Dictionary<int, string>() {{1, fColor},{2, inColor}};
+
+            eData = DrawRectangle();
+        }
+        public List<List<int>> DrawRectangle() {
+            List<List<int>> lst = new List<List<int>>();
+            var borderLine = new int[sizeX]; 
+            var body = new int[sizeX]; 
+            for (var i = 0; i < sizeX; i++) { 
+                borderLine[i] = 1;
+                body[i] = ((i != 0 && i != sizeX-1) ? (inColor != "" ? 2 : 0) : 1); 
+            }
+            for (var iy = 0; iy < sizeY; iy++) {
+                if (iy==0 || iy==sizeY-1) {
+                    lst.Add(new List<int>(borderLine));
+                    continue;
+                } else lst.Add(new List<int>(body));
+            }
+            return lst;
+        }
+        public void Update(int sizex=-1, int sizey=-1,int thickness=-1, string frameColor="", string fillColor=null) {
+            if (sizex!=-1) sizeX = sizex;
+            if (sizey!=-1) sizeY = sizey;
+            if (thickness!=-1) thick = thickness;
+            if (frameColor!="") fColor = frameColor;
+            if (fillColor!=null) inColor = fillColor;
+
+            eData = DrawRectangle();
+        }
+        public override void Refresh() {
+            eData = DrawRectangle();
+        }
+    }
+    class DisplayElementCircle : DisplayElement {
+        int sizeX;
+        int sizeY;
+        int thick;
+        string fColor;
+        string inColor;
+        
+        public DisplayElementCircle(MyGridProgram m, int[] position, int[] size, int thickness=1, int layer=0,
+                string color = "Y", string fillColor = "") : base(m, "CIRCLE", position, layer) {
+            thick = thickness;
+            sizeX = size[0];
+            sizeY = size[1];
+            fColor = color;
+            inColor = fillColor;
+            colorConvertTable = new Dictionary<int, string>() {{1, fColor},{2, inColor}};
+
+            eData = DrawCircle();
+        }
+        public List<List<int>> DrawCircle() {
+            List<List<int>> lst = new List<List<int>>(); 
+            var center = new float[] {sizeX/2f, sizeY/2f};
+            float a2 = (float)Math.Pow(sizeX/2f,2);
+            float b2 = (float)Math.Pow(sizeY/2f,2);
+            for (var iy = 0.5f; iy < sizeY; iy++) {
+                lst.Add(new List<int>());
+                for (var ix = 0.5f; ix < sizeX; ix++) {
+                    double length = (Math.Pow(ix-center[0], 2)/a2 + Math.Pow(iy-center[1], 2)/b2);
+                    double length_min = (Math.Pow(ix-center[0], 2)/Math.Pow(sizeX/2f-thick,2) +
+                        Math.Pow(iy-center[1], 2)/Math.Pow(sizeY/2f-thick,2));
+                    lst[(int)iy].Add(length < 1 ? (length_min >= 1 ? 1 : (inColor == "" ? 0 : 2)) : 0);
+                }
+            }
+            return lst;
         }
     }
 }
