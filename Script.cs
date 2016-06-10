@@ -5,32 +5,33 @@
 string TextPanelName = "LCD Centre 3 Base";
 
 DisplayInterface display;
-
 int uid;
+int uid2;
 Program() {
     var textPanel = GridTerminalSystem.GetBlockWithName(TextPanelName) as IMyTextPanel;
     display = new DisplayInterface(textPanel, this, Runtime);
-    //display.AddElementCircle(new int[] {5,5}, new int[] {70, 80}, 1, 0,"W", "G2");
-    display.Show();
+    uid2 = display.AddElementString("", new int[] {9, 35}, "R", -6);
+    display.AddElementString("ENERGY:\n 2.35 MW", new int[] {1, 1}, "Y", 0);
+    display.AddElementString("(+230.5 kW)", new int[] {34, 8}, "G", 0);
+    display.AddElementCustom(new int[] {1,20}, 
+"00111000011100\n01222100122210\n12222211222221\n12222222222221\n12222222222221\n"+
+"01222222222210\n00122222222100\n"+
+"00012222221000\n00001222210000\n00000122100000\n00000011000000",
+        new Dictionary<int, string>() {{1, "Y"}, {2, "R"}});
     Echo("INIT>>"+Runtime.CurrentInstructionCount+"/"+Runtime.MaxInstructionCount);
 }
 
-//  "\uE001\uE002\uE003\uE004\uE006\uE00E\uE00D\uE00F"
 int runTick = 0;
 static int fTime;
-int val = 0;
 void Main(string argument) 
 {
     runTick++;
     if (runTick == 1) {
         runTick = 0;
     }
-    val=(val+1);
     fTime = DateTime.Now.Millisecond;
 
-    var arr = new string[] {"R","G","B","Y","G1"};
-    display.AddElementString(val.ToString(), new int[] {13*(val/40), 2*(val%40)}, arr[val%5], 0);
-    display.Show();
+    display.Process();
 
     Echo("Runtime:\n   "+(DateTime.Now.Millisecond-fTime) + " ms\n   "+Runtime.CurrentInstructionCount+"/"+
         Runtime.MaxInstructionCount+" instructions\n   "+Runtime.CurrentMethodCallCount+"/"+
@@ -41,9 +42,10 @@ void Main(string argument)
 class DisplayInterface {
     static Dictionary<char, List<List<int>>> convertTable = new Dictionary<char, List<List<int>>>();
     Dictionary<string, string> colorTable = new Dictionary<string, string>(); 
+    //  "\uE001\uE002\uE003\uE004\uE006\uE00E\uE00D\uE00F"
     List<string> grayList = new List<string>() {"'   '","!|!|!","\uE00F","\uE009","\uE00D","\uE00E","\uE006"};
     public Dictionary<int, DisplayElement> elementList = new Dictionary<int, DisplayElement>();
-    string[] grayArray;
+    string[] bgrArray;
     int id_index = 0;
     IMyTextPanel panel;
     MyGridProgram meDebug;
@@ -56,9 +58,9 @@ class DisplayInterface {
     // Anti script-complexity system: should prevent "Script is too complex" error to be raised, instead it will
     //   split the execution of script in several steps (speed of update will be decreased)
     int ASCS_ind = 0;       // if is higher than 0, it means that last run was complex and we need to finish it.
-    List<DisplayElement> ASCS_lst = null;
+    List<DisplayElement> ASCS_lst = null;   // save sorted list to save Instructions
 
-    public int brightness = 0;
+    public string bgrColor = "G6";
 
     public DisplayInterface(IMyTextPanel pan, IMyGridProgramRuntimeInfo rt, Single fSize = (Single)0.2, int sizeX = 80, int sizeY = 89) {
         panel = pan;
@@ -203,7 +205,9 @@ class DisplayInterface {
         var layerElements = new List<DisplayElement>();
         if (ASCS_lst != null) layerElements = ASCS_lst;
         else {
+
             for (var i = 0; i < keys.Count; i++) {
+                if (!elementList[keys[i]].isVisible) continue;
                 var layer = elementList[keys[i]].eLayer;
                 var index = 0;
                 for (var el = 0; el < layerElements.Count; el++) {
@@ -213,7 +217,6 @@ class DisplayInterface {
                 layerElements.Insert(index, elementList[i]);
             }
         }
-
         var ASCS_mergeLogic = 0;
         for (var i = ASCS_ind; i < layerElements.Count; i++) {
             ASCS_mergeLogic = (MergeData(layerElements[i]) ? 1 : 2);
@@ -237,6 +240,7 @@ class DisplayInterface {
     public void Show() {
         RefreshData();
         if (ASCS_ind == 0) {
+
             var toShow = ConvertData();
             if (panel.GetPublicText() != toShow) RefreshScreen(toShow);
             else if (meDebug != null) meDebug.Echo("Text already shown");
@@ -244,14 +248,14 @@ class DisplayInterface {
     }
 
     public void ResetData() {
-        grayArray = new string[x];
-        var gray = grayList[brightness]; 
+        bgrArray = new string[x];
+        var color = colorTable[bgrColor]; 
         for (var i = 0; i < x; i++) {
-            grayArray[i] = gray;
+            bgrArray[i] = color;
         }
         var newData = new List<List<string>>(); 
         for (var ty = 0; ty < y; ty++) {
-            newData.Add(new List<string>(grayArray));
+            newData.Add(new List<string>(bgrArray));
         }
         data = newData;
     }
@@ -289,9 +293,10 @@ class DisplayInterface {
             for (var ix = 0; ix < dat[iy].Count; ix++) {
                 if ((iy+iposy) < y && (iy+iposy) >= 0 && (ix+iposx) < x && (ix+iposx) >= 0) {
                     var d = dat[iy][ix];
-                    if (d != 0)
-                        data[iy+iposy][ix+iposx] = (colorTable.ContainsKey(ccTable[d]) ?
+                    if (d != 0) {
+                        data[iy+iposy][ix+iposx] = (ccTable.ContainsKey(d) && colorTable.ContainsKey(ccTable[d]) ?
                                 colorTable[ccTable[d]] : colorTable["W"]);
+                    }
                 }
                 if (runtime.CurrentInstructionCount > 49800) return false;
             }
@@ -347,18 +352,24 @@ class DisplayInterface {
         return id;  
     }
     public int AddElementCircle(int[] pos, int[] size, int thickness, int layer=0, string frameColor="Y", 
-             string fillColor="") {   
-        var id = id_index;   
-        elementList.Add(id,  
-            new DisplayElementCircle(meDebug, pos, size, thickness, layer, frameColor, fillColor)  
-                    as DisplayElement);   
-        id_index++;   
-        return id;   
+             string fillColor="") {
+        var id = id_index;
+        elementList.Add(id,
+            new DisplayElementCircle(meDebug, pos, size, thickness, layer, frameColor, fillColor)
+                    as DisplayElement);
+        id_index++;
+        return id;
+    }
+    public int AddElementCustom(int[] pos, string data, Dictionary<int, string> cTable, int layer=0) {
+        var id = id_index;
+        elementList.Add(id,
+            new DisplayElementCustom(meDebug, pos, data, cTable, layer) as DisplayElement);
+        id_index++;
+        return id;
     }
     public void RemoveElement(int uid) { 
         DisplayElement holder = null; 
         if (elementList.ContainsKey(uid)) holder = elementList[uid]; 
-        //if (holder != null) ;
         elementList.Remove(uid);            // Hope Garbage Collector will work!
     }
     public DisplayElement GetElement(int uid) {
@@ -373,6 +384,7 @@ class DisplayInterface {
         public int posY;
         public int eLayer;
         public string eType;
+        public bool isVisible = true;
         public Dictionary<int, string> colorConvertTable;
         internal MyGridProgram me;
 
@@ -508,8 +520,9 @@ class DisplayInterface {
             if (frameColor!="") fColor = frameColor;
             if (sizex!=-1) sizeX = sizex;
             if (sizey!=-1) sizeY = sizey;
-            eData = CreateProgressBar(progress);
             colorConvertTable = new Dictionary<int, string>() {{1, pColor},{2, fColor},{3, pColor2},{4, pColor3}};
+
+            eData = CreateProgressBar(progress);
         }
         public override void Refresh() { 
             eData=CreateProgressBar(progress); 
@@ -543,10 +556,10 @@ class DisplayInterface {
             var body = new int[sizeX]; 
             for (var i = 0; i < sizeX; i++) { 
                 borderLine[i] = 1;
-                body[i] = ((i != 0 && i != sizeX-1) ? (inColor != "" ? 2 : 0) : 1); 
+                body[i] = ((i >= thick && i < sizeX-thick) ? (inColor != "" ? 2 : 0) : 1); 
             }
             for (var iy = 0; iy < sizeY; iy++) {
-                if (iy==0 || iy==sizeY-1) {
+                if (iy<thick || iy>=sizeY-thick) {
                     lst.Add(new List<int>(borderLine));
                     continue;
                 } else lst.Add(new List<int>(body));
@@ -559,6 +572,7 @@ class DisplayInterface {
             if (thickness!=-1) thick = thickness;
             if (frameColor!="") fColor = frameColor;
             if (fillColor!=null) inColor = fillColor;
+            colorConvertTable = new Dictionary<int, string>() {{1, fColor},{2, inColor}};
 
             eData = DrawRectangle();
         }
@@ -599,6 +613,46 @@ class DisplayInterface {
                 }
             }
             return lst;
+        }
+        public void Update(int sizex=-1, int sizey=-1,int thickness=-1, string frameColor="", string fillColor=null) { 
+            if (sizex!=-1) sizeX = sizex; 
+            if (sizey!=-1) sizeY = sizey; 
+            if (thickness!=-1) thick = thickness; 
+            if (frameColor!="") fColor = frameColor; 
+            if (fillColor!=null) inColor = fillColor;
+            colorConvertTable = new Dictionary<int, string>() {{1, fColor},{2, inColor}};
+ 
+            eData = DrawCircle(); 
+        }
+        public override void Refresh() { 
+            eData = DrawCircle(); 
+        }
+    }
+    class DisplayElementCustom : DisplayElement {
+
+        public DisplayElementCustom(MyGridProgram m, int[] position, string data, Dictionary<int, string> colTable,
+                        int layer=0 )
+                    : base(m, "CUSTOM", position, layer) {
+            colorConvertTable = colTable;
+            eData = ConvertCustomData(data);
+        }
+        List<List<int>> ConvertCustomData(string dat) {
+            var lst = new List<List<int>>();
+            var datArr = dat.Split('\n');
+            for (var i = 0; i < datArr.Length; i++) {
+                lst.Add(new List<int>());
+                for (var a = 0; a < datArr[i].Length; a++) {
+                    var holder = 0;
+                    Int32.TryParse(datArr[i][a].ToString(), out holder);
+                    lst[i].Add(holder);
+                }
+            }
+            return lst;
+        }
+        public void Update(string data=null, Dictionary<int, string> colorTable=null, List<List<int>> dataRaw=null) {
+            if (data != null) eData = ConvertCustomData(data);
+            if (colorTable != null) colorConvertTable = colorTable;
+            if (dataRaw!=null) eData = dataRaw;
         }
     }
 }
